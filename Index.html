@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boss Timing</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%;
+      font-family: Arial, sans-serif;
+      font-weight: bold;
+      background-color: #f2f2f2;
+    }
+    .dark-mode body {
+      background-color: #1e1e1e;
+      color: white;
+    }
+    .container { max-width: 100%; padding: 0 10px; }
+    h1 { text-align: center; color: #2c3e50; margin: 20px 0; }
+    .topbar {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 10px; margin-bottom: 10px;
+    }
+    .topbar label {
+      font-size: 14px; display: flex; align-items: center; gap: 5px;
+      background: #fff; padding: 6px 10px; border-radius: 8px; border: 1px solid #ccc;
+    }
+    .topbar input[type="text"] {
+      padding: 6px; border-radius: 8px; border: 1px solid #ccc; width: 200px;
+    }
+    table {
+      width: 90%; border-collapse: collapse; background: #fff;
+      margin: 0 auto; border-radius: 10px; overflow: hidden;
+    }
+    th, td {
+      border: 1px solid #ccc; text-align: center; padding: 4px;
+    }
+    th { background-color: #3498db; color: white; }
+    tr.spawned { background-color: #f8d7da; }
+    input[type="datetime-local"] {
+      width: 180px; padding: 5px; border-radius: 5px; border: 1px solid #ccc;
+    }
+    .clear-btn, .copy-btn {
+      padding: 5px 8px; font-size: 12px;
+      border: none; border-radius: 4px; background-color: #e74c3c;
+      color: white; cursor: pointer;
+    }
+    .copy-btn { background-color: #2ecc71; }
+    .copy-btn:hover { background-color: #27ae60; }
+    .clear-btn:hover { background-color: #c0392b; }
+    .toast {
+      position: fixed; bottom: 10px; right: 10px;
+      background-color: #333; color: white; padding: 8px 14px;
+      border-radius: 6px; opacity: 0.9; font-size: 14px;
+      z-index: 9999; animation: fadein 0.3s ease-in-out;
+    }
+    .history-toggle { margin-top: 6px; display: flex; align-items: center; gap: 4px; font-size: 13px; }
+    .history-list { font-size: 13px; margin-top: 6px; display: none; color: #444; }
+    .dark-mode { background-color: #1e1e1e; color: white; }
+    .dark-mode table { background-color: #2c2c2c; color: white; }
+    .dark-mode th { background-color: #444; }
+    .dark-mode td { border-color: #666; }
+    .dark-mode input, .dark-mode select {
+      background-color: #333; color: white; border-color: #555;
+    }
+    .dark-mode .topbar label { background-color: #333; border-color: #555; }
+    .dark-mode .clear-btn { background-color: #e74c3c; }
+    .dark-mode .copy-btn { background-color: #2ecc71; }
+    .dark-mode .toast { background-color: #555; }
+    @keyframes fadein {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 0.9; transform: translateY(0); }
+    }
+    @media (max-width: 480px) {
+      input[type="datetime-local"] { width: 100%; }
+      table, th, td { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px;">
+      <h1>Boss timing</h1>
+      <button id="themeToggle" onclick="toggleTheme()" style="font-size: 20px; background: none; border: none; cursor: pointer;">🌙</button>
+    </div>
+
+    <div class="topbar">
+      <label>
+        <input type="checkbox" id="toggleSort" onchange="renderTable()" />
+        Ưu tiên boss sắp xuất hiện
+      </label>
+      <div style="display: flex; gap: 6px;">
+        <input type="text" id="searchInput" placeholder="Tìm tên boss..." oninput="renderTable()" />
+        <button class="clear-btn" onclick="document.getElementById('searchInput').value=''; renderTable();">Xóa</button>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Khu vực</th>
+          <th>Vị trí</th>
+          <th>Tên Boss</th>
+          <th>Level</th>
+          <th>Hồi sinh</th>
+        </tr>
+      </thead>
+      <tbody id="bossBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const postURL = "https://script.google.com/macros/s/AKfycby_L9wMmbtFTnHskYAlZVA7Lt_A7ajdD7Spcu8xIdmnYNJLiuOG2mvzzg8vhD08nxCz/exec";
+    const fetchURL = "https://script.google.com/macros/s/AKfycbyo7xVyR5OVsZAx0TB4Ta-H2t-KuNJ7sn1DMqXfJKXN3cqHdngx0MMhYqBnqGHvMcyM/exec";
+
+    function getDelay(level) {
+      const lv = parseInt(level);
+      if (lv >= 65) return 15;
+      if (lv >= 55) return 10;
+      return 5;
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const isDark = html.classList.toggle("dark-mode");
+      localStorage.setItem("darkMode", isDark ? "on" : "off");
+      document.getElementById("themeToggle").innerText = isDark ? "☀️" : "🌙";
+    }
+
+    function applyStoredTheme() {
+      const mode = localStorage.getItem("darkMode");
+      if (mode === "on") {
+        document.documentElement.classList.add("dark-mode");
+        document.getElementById("themeToggle").innerText = "☀️";
+      }
+    }
+
+    let bossList = [];
+
+    function saveTime(index, timeStr) {
+  const boss = bossList[index];
+  const base = new Date(timeStr);
+  const now = new Date();
+  const delay = getDelay(boss.level);
+  const cycleMs = boss.respawn * 3600000 + delay * 60000;
+
+  let adjustedTime = new Date(base.getTime());
+  while (adjustedTime.getTime() + cycleMs <= now.getTime()) {
+    adjustedTime = new Date(adjustedTime.getTime() + cycleMs);
+  }
+
+  // Lưu mốc gần nhất trước hiện tại
+  const key = "boss_" + index;
+  let history = JSON.parse(localStorage.getItem(key + "_history") || "[]");
+  history.unshift(adjustedTime.toISOString());
+  history = history.slice(0, 5);
+  localStorage.setItem(key, adjustedTime.toISOString());
+  localStorage.setItem(key + "_history", JSON.stringify(history));
+
+  sendKillTimeToSheet(boss, adjustedTime.toISOString());
+  renderTable();
+}
+  
+
+
+
+    function loadTime(index) {
+      return localStorage.getItem("boss_" + index);
+    }
+
+    function loadHistory(index) {
+  const boss = bossList[index];
+  const baseKill = localStorage.getItem("boss_" + index);
+  const delay = getDelay(boss.level);
+  const respawnHour = boss.respawn;
+
+  if (!baseKill || !respawnHour) return [];
+
+  const now = new Date();
+  const base = new Date(baseKill);
+  const cycleMs = respawnHour * 3600000 + delay * 60000;
+
+  const history = [];
+  let count = 0;
+
+  // Tính số lần respawn đã xảy ra từ base đến hiện tại
+  let passedCycles = Math.floor((now - base) / cycleMs);
+
+  // Lấy 5 mốc gần hiện tại nhất, tính lùi về quá khứ
+  for (let i = passedCycles; i >= 0 && count < 5; i--) {
+    const time = new Date(base.getTime() + i * cycleMs);
+    history.push(time);
+    count++;
+  }
+
+  return history;
+}
+
+
+
+    function clearTime(index) {
+      localStorage.removeItem("boss_" + index);
+      localStorage.removeItem("boss_" + index + "_history");
+      renderTable();
+    }
+
+    function sendKillTimeToSheet(boss, timeStr) {
+  fetch(postURL, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    name: boss.name,
+    zone: boss.zone,
+    location: boss.location,
+    killTime: timeStr
+  })
+})
+.then(() => showToast("Đã gửi lên Sheet"))
+.catch(() => showToast("Gửi thất bại"));
+ 
+}
+
+
+    function formatDateTime(dt) {
+      return dt.toLocaleString("vi-VN", {
+        hour: "2-digit", minute: "2-digit",
+        day: "numeric", month: "numeric", hour12: false
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.innerText = msg;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2000);
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById("bossBody");
+      tbody.innerHTML = "";
+      const now = new Date();
+      const isSort = document.getElementById("toggleSort").checked;
+      const searchText = document.getElementById("searchInput").value.toLowerCase();
+
+      let data = bossList.map((b, i) => {
+        const kill = loadTime(i);
+        let last = kill ? new Date(kill) : null;
+        let next = null;
+
+        if (last && b.respawn) {
+          const delay = getDelay(b.level);
+          do {
+            next = new Date(last.getTime() + b.respawn * 3600000 + delay * 60000);
+            last = new Date(next);
+          } while (next < now);
+        }
+
+        return { ...b, index: i, killTime: kill ? new Date(kill) : null, respawnTime: next };
+      });
+
+      data = data.filter(b => b.name.toLowerCase().includes(searchText));
+      if (isSort) {
+        const withRespawn = data.filter(b => b.respawnTime).sort((a, b) => a.respawnTime - b.respawnTime);
+        const withoutRespawn = data.filter(b => !b.respawnTime);
+        data = [...withRespawn, ...withoutRespawn];
+      }
+
+      for (const boss of data) {
+        const tr1 = document.createElement("tr");
+        const tr2 = document.createElement("tr");
+        if (boss.respawnTime && boss.respawnTime <= now) tr1.classList.add("spawned");
+
+        tr1.innerHTML = `
+          <td><b>${boss.zone}</b></td>
+          <td><b>${boss.location}</b></td>
+          <td><b>${boss.name}</b></td>
+          <td><b>${boss.level}</b></td>
+          <td><b>${boss.respawn > 0 ? boss.respawn + " giờ" : "-"}</b></td>
+        `;
+
+        const killTimeVal = boss.killTime ? new Date(boss.killTime.getTime() - boss.killTime.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+        const respawnVal = boss.respawnTime ? formatDateTime(boss.respawnTime) : "-";
+        const historyList = loadHistory(boss.index).map(h => `<li>${formatDateTime(new Date(h))}</li>`).join("");
+
+        tr2.innerHTML = `
+  <td colspan="5">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <label><b>Tiêu diệt:</b></label>
+        <input type="datetime-local" value="${killTimeVal}" onchange="saveTime(${boss.index}, this.value)" />
+      </div>
+      <div><b>Hồi sinh: ${respawnVal}</b></div>
+      <div style="display: flex; gap: 6px;">
+        <button class="copy-btn" onclick="copyLog('${boss.name}', '${boss.location}', '${respawnVal}')">Copy</button>
+        <button class="clear-btn" onclick="clearTime(${boss.index})">Xóa</button>
+      </div>
+    </div>
+    <div class="history-toggle">
+      <input type="checkbox" id="historyToggle_${boss.index}" name="historyToggle_${boss.index}" onchange="toggleHistory(${boss.index})" />
+      <label for="historyToggle_${boss.index}">Lịch sử tiêu diệt</label>
+    </div>
+    <ul id="historyList_${boss.index}" class="history-list">${historyList}</ul>
+  </td>
+`;
+
+
+        tbody.appendChild(tr1);
+        tbody.appendChild(tr2);
+      }
+    }
+
+    function toggleHistory(index) {
+  const list = document.getElementById("historyList_" + index);
+  const toggle = document.getElementById("historyToggle_" + index);
+  if (!list || !toggle) return;
+  list.style.display = toggle.checked ? "block" : "none";
+}
+
+
+    function copyLog(name, location, time) {
+      const text = `Boss ${name} ở ${location} thời gian respawn ${time}`;
+      navigator.clipboard.writeText(text)
+        .then(() => showToast("Đã copy log"))
+        .catch(() => alert("Không thể copy"));
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+  applyStoredTheme();
+  fetch(fetchURL)
+    .then(res => res.json())
+    .then(data => {
+      bossList = data.map((b, i) => {
+        // Đọc killTime từ Sheet
+        if (b.killTime) {
+          try {
+            const t = new Date(b.killTime);
+            if (!isNaN(t)) {
+              localStorage.setItem("boss_" + i, t.toISOString());
+            }
+          } catch {}
+        }
+
+        return {
+          zone: b.zone,
+          location: b.location,
+          name: b.name,
+          level: b.level,
+          respawn: parseFloat(b.respawn),
+          index: i
+        };
+      });
+      renderTable();
+    });
+});
+
+  </script>
+</body>
+</html>
