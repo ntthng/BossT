@@ -178,34 +178,36 @@
     }
   </script>
 
-  <script type="module">
-    import { getBossList, saveKilledTime, subscribeToBossData } from './firebase.js';
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js"></script>
+<script>
+  const firebaseConfig = {
+    databaseURL: "https://boss-timing-default-rtdb.asia-southeast1.firebasedatabase.app"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
 
-    getBossList((bossData) => {
-      allBosses = bossData;
-      renderBossList(allBosses);
+  function getBossList(callback) {
+    firebase.database().ref("bosses").on("value", (snapshot) => {
+      const data = snapshot.val();
+      if (data) callback(data);
     });
+  }
 
-    subscribeToBossData((updatedData) => {
-      Object.entries(updatedData).forEach(([id, data]) => {
-        const timeEl = document.getElementById(`time-${id}`);
-        const logEl = document.getElementById(`log-${id}`);
+  function saveKilledTime(id, data) {
+    firebase.database().ref("history/" + id).set(data);
+  }
 
-        if (!timeEl || !logEl) return;
-
-        const killedTime = new Date(data.killedTime);
-        const nextRespawn = new Date(data.nextRespawn);
-        const logs = data.logs || [];
-
-        timeEl.innerText = `Next Respawn: ${formatTime(nextRespawn)}`;
-        logEl.textContent = logs.join("\n\n");
-
-        const saved = loadLocalData(id);
-        if (!saved || saved.nextRespawn !== data.nextRespawn) {
-          saveLocalData(id, data);
-        }
-      });
+  function subscribeToBossData(callback) {
+    firebase.database().ref("history").on("value", (snapshot) => {
+      const data = snapshot.val();
+      if (data) callback(data);
     });
-  </script>
+  }
+
+  // Sau đó dùng như cũ:
+  getBossList((data) => { ... });
+  subscribeToBossData((data) => { ... });
+</script>
 </body>
 </html>
