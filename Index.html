@@ -327,5 +327,20 @@
 
       navigator.clipboard.writeText(result).then(() => alert("✅ Đã sao chép log!"));
     }
-  </script></body>
+  </script>
+  <script type="module">
+  import { saveKilledTime, subscribeToBossData } from './firebase.js';
+
+  // Lưu giờ tiêu diệt ví dụ:
+  const bossId = "chertuba";
+  const killedTime = Date.now();
+  saveKilledTime(bossId, killedTime);
+
+  // Nhận dữ liệu realtime:
+  subscribeToBossData((data) => {
+    console.log("Realtime update:", data);
+    // TODO: update UI tại đây
+  });
+  </script>
+</body>
 </html>
