@@ -17,4 +17,194 @@
     .checkbox-group input { margin-right: 6px; }
     .search-box { position: relative; width: 300px; }
     #searchInput { width: 100%; padding: 8px 30px 8px 10px; border-radius: 6px; border: 1px solid #444; background-color: #222; color: #fff; }
-    .clear-btn { position: absolute; right: 6px; top: 50%; transform: translateY(-
+    .clear-btn { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 20px; background: none; border: none; color: #aaa; padding: 0; line-height: 1; }
+    .clear-btn:hover { color: #fff; }
+    .boss-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    .boss-card { background-color: #1e1e1e; padding: 16px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.5); transition: 0.3s ease; }
+    .boss-card:hover { box-shadow: 0 0 15px rgba(255,255,255,0.1); }
+    .boss-title { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
+    .boss-info { font-size: 14px; margin-bottom: 6px; }
+    .label { color: #aaa; }
+    input[type="datetime-local"] { background-color: #222; color: #f0f0f0; border: 1px solid #444; padding: 4px; border-radius: 6px; }
+    .next-respawn { margin-top: 4px; font-weight: bold; color: #0f0; }
+    .log-toggle, .copy-log { margin-top: 6px; font-size: 13px; background-color: #2a2a2a; color: #ccc; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; margin-right: 6px; }
+    .log-box { display: none; margin-top: 6px; background-color: #191919; padding: 6px; border-radius: 6px; font-size: 12px; white-space: pre-line; color: #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Canh Giờ Boss Lineage2M</h1>
+  <div class="top-controls">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Tìm tên boss, zone hoặc vị trí..." />
+      <button onclick="clearSearch()" class="clear-btn">×</button>
+    </div>
+    <label class="checkbox-group">
+      <input type="checkbox" id="sortByRespawn" onchange="sortAndRender()" /> Sắp xếp theo gần spawn
+    </label>
+  </div>
+  <div id="bossList" class="boss-list"></div>
+
+  <script src="./firebase.js"></script>
+  <script>
+    const killedOffsetMap = level => level >= 70 ? 30 : level >= 60 ? 20 : level >= 50 ? 10 : 5;
+    const formatTime = date => new Date(date).toLocaleString("vi-VN", { hour12: false });
+    let allBosses = {}, bossRespawnMap = {};
+
+    function loadLocalData(id) {
+      try { return JSON.parse(localStorage.getItem("bossData-" + id)) || null; }
+      catch (e) { return null; }
+    }
+
+    function saveLocalData(id, data) {
+      localStorage.setItem("bossData-" + id, JSON.stringify(data));
+    }
+
+    function renderBossList(bosses) {
+      const container = document.getElementById("bossList");
+      container.innerHTML = "";
+      const entries = Object.entries(bosses);
+      if (document.getElementById("sortByRespawn").checked) {
+        entries.sort(([, a], [, b]) => {
+          const timeA = bossRespawnMap[a.name]?.getTime() || Infinity;
+          const timeB = bossRespawnMap[b.name]?.getTime() || Infinity;
+          return timeA - timeB;
+        });
+      }
+
+      entries.forEach(([id, boss]) => {
+        const card = document.createElement("div");
+        card.className = "boss-card";
+        card.setAttribute("data-name", boss.name);
+        card.setAttribute("data-location", boss.location);
+        card.setAttribute("data-zone", boss.zone);
+
+        const inputId = `input-${id}`;
+        const timeId = `time-${id}`;
+        const logId = `log-${id}`;
+        const toggleId = `toggle-${id}`;
+
+        card.innerHTML = `
+          <div class="boss-title">${boss.name}</div>
+          <div class="boss-info"><span class="label">Zone:</span> ${boss.zone}</div>
+          <div class="boss-info"><span class="label">Location:</span> ${boss.location}</div>
+          <div class="boss-info"><span class="label">Level:</span> ${boss.level}</div>
+          <div class="boss-info"><span class="label">Respawn:</span> ${boss.respawn} giờ</div>
+          <div class="boss-info">
+            <span class="label">Nhập thời gian bị tiêu diệt:</span><br>
+            <input type="datetime-local" id="${inputId}">
+          </div>
+          <div class="next-respawn" id="${timeId}">Next Respawn: --</div>
+          <button class="log-toggle" id="${toggleId}">Xem lịch sử</button>
+          <button class="copy-log" onclick="copyLog('${id}')">COPY LOG</button>
+          <div class="log-box" id="${logId}"></div>
+        `;
+
+        container.appendChild(card);
+
+        const inputEl = document.getElementById(inputId);
+        const timeEl = document.getElementById(timeId);
+        const logEl = document.getElementById(logId);
+        const toggleBtn = document.getElementById(toggleId);
+
+        let killedTime = null, nextRespawn = null;
+        const logs = [];
+
+        const savedData = loadLocalData(id);
+        if (savedData) {
+          if (savedData.killedTime) killedTime = new Date(savedData.killedTime);
+          if (savedData.nextRespawn) nextRespawn = new Date(savedData.nextRespawn);
+          if (Array.isArray(savedData.logs)) logs.push(...savedData.logs);
+
+          if (nextRespawn) {
+            bossRespawnMap[boss.name] = nextRespawn;
+            timeEl.innerText = `Next Respawn: ${formatTime(nextRespawn)}`;
+            logEl.textContent = logs.join("\n\n");
+          }
+        }
+
+        inputEl.addEventListener("change", () => {
+          killedTime = new Date(inputEl.value);
+          const offsetMs = killedOffsetMap(boss.level) * 60 * 1000;
+          const respawnMs = boss.respawn * 60 * 60 * 1000;
+          nextRespawn = new Date(killedTime.getTime() + respawnMs);
+
+          bossRespawnMap[boss.name] = nextRespawn;
+          timeEl.innerText = `Next Respawn: ${formatTime(nextRespawn)}`;
+
+          logs.unshift(`• Kill: ${formatTime(killedTime)}\n  → Respawn: ${formatTime(nextRespawn)}\n• [RAW] ${nextRespawn.toISOString()}`);
+          logEl.textContent = logs.join("\n\n");
+
+          saveLocalData(id, {
+            killedTime: killedTime.toISOString(),
+            nextRespawn: nextRespawn.toISOString(),
+            logs
+          });
+
+          saveKilledTime(id, {
+            killedTime: killedTime.toISOString(),
+            nextRespawn: nextRespawn.toISOString(),
+            logs
+          });
+
+          if (document.getElementById("sortByRespawn").checked) sortAndRender();
+        });
+
+        toggleBtn.addEventListener("click", () => {
+          logEl.style.display = logEl.style.display === "none" ? "block" : "none";
+        });
+      });
+    }
+
+    function sortAndRender() {
+      renderBossList(allBosses);
+    }
+
+    function clearSearch() {
+      document.getElementById('searchInput').value = '';
+      document.querySelectorAll(".boss-card").forEach(card => card.style.display = "block");
+    }
+
+    function copyLog(id) {
+      const boss = allBosses[id];
+      const logBox = document.getElementById(`log-${id}`);
+      const rawLine = (logBox.textContent.trim().split("\n").find(l => l.startsWith("• [RAW]")) || "").replace("• [RAW] ", "");
+      if (!rawLine) return alert("Không lấy được thời gian respawn!");
+      const date = new Date(rawLine);
+      if (isNaN(date.getTime())) return alert("Thời gian không hợp lệ!");
+
+      const hour = date.getHours().toString().padStart(2, "0");
+      const minute = date.getMinutes().toString().padStart(2, "0");
+      const day = date.getDate();
+      const month = date.getMonth() + 1;
+      const result = `${boss.name} | ${boss.location} | ${hour}:${minute} ${day}/${month}`;
+      navigator.clipboard.writeText(result).then(() => alert("✅ Đã sao chép log!"));
+    }
+
+    // Gọi Firebase functions
+    getBossList((bossData) => {
+      allBosses = bossData;
+      renderBossList(allBosses);
+    });
+
+    subscribeToBossData((updatedData) => {
+      Object.entries(updatedData).forEach(([id, data]) => {
+        const timeEl = document.getElementById(`time-${id}`);
+        const logEl = document.getElementById(`log-${id}`);
+        if (!timeEl || !logEl) return;
+
+        const killedTime = new Date(data.killedTime);
+        const nextRespawn = new Date(data.nextRespawn);
+        const logs = data.logs || [];
+
+        timeEl.innerText = `Next Respawn: ${formatTime(nextRespawn)}`;
+        logEl.textContent = logs.join("\n\n");
+
+        const saved = loadLocalData(id);
+        if (!saved || saved.nextRespawn !== data.nextRespawn) {
+          saveLocalData(id, data);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
